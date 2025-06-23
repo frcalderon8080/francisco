@@ -1,0 +1,144 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: AWS STEDI Lakehouse infrastructure with S3, Glue, and IAM.
+
+Parameters:
+  BucketPrefix:
+    Type: String
+    Default: stedi-lakehouse
+    Description: Prefix used for all S3 buckets (e.g., "stedi-lakehouse" creates stedi-lakehouse-customer-landing, etc.)
+
+Resources:
+
+  ### S3 Buckets ###
+  CustomerLandingBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub '${BucketPrefix}-customer-landing'
+
+  AccelerometerLandingBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub '${BucketPrefix}-accelerometer-landing'
+
+  StepTrainerLandingBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub '${BucketPrefix}-steptrainer-landing'
+
+  CustomerTrustedBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub '${BucketPrefix}-customer-trusted'
+
+  AccelerometerTrustedBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub '${BucketPrefix}-accelerometer-trusted'
+
+  StepTrainerTrustedBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub '${BucketPrefix}-steptrainer-trusted'
+
+  CustomerCuratedBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub '${BucketPrefix}-customer-curated'
+
+  MachineLearningCuratedBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub '${BucketPrefix}-ml-curated'
+
+  ### Glue Database ###
+  GlueDatabase:
+    Type: AWS::Glue::Database
+    Properties:
+      CatalogId: !Ref AWS::AccountId
+      DatabaseInput:
+        Name: stedi_lakehouse_db
+
+  ### Glue IAM Role ###
+  GlueJobRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: stedi-glue-job-role
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: glue.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSGlueServiceRole
+        - arn:aws:iam::aws:policy/AmazonS3FullAccess
+      Policies:
+        - PolicyName: GlueAccessPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - glue:CreateTable
+                  - glue:GetTable
+                  - glue:GetTableVersion
+                  - glue:GetTableVersions
+                Resource: "*"
+
+
+  CustomerLandingTable:
+    Type: AWS::Glue::Table
+    Properties:
+      CatalogId: !Ref AWS::AccountId
+      DatabaseName: !Ref GlueDatabase
+      TableInput:
+        Name: customer_landing
+        TableType: EXTERNAL_TABLE
+        Parameters:
+          classification: json
+        StorageDescriptor:
+          Columns:
+            - Name: customerName
+              Type: string
+            - Name: email
+              Type: string
+            - Name: phone
+              Type: string
+            - Name: birthday
+              Type: string
+            - Name: registrationDate
+              Type: string
+            - Name: serialNumber
+              Type: string
+            - Name: shareWithResearchAsOfDate
+              Type: string
+            - Name: shareWithPublicAsOfDate
+              Type: string
+          Location: !Sub 's3://${CustomerLandingBucket}/'
+          InputFormat: org.apache.hadoop.mapred.TextInputFormat
+          OutputFormat: org.apache.hadoop.hive.ql.io.HiveIgnoreKeyTextOutputFormat
+          SerdeInfo:
+            SerializationLibrary: org.openx.data.jsonserde.JsonSerDe
+
+Outputs:
+  S3BucketNames:
+    Description: All provisioned S3 buckets
+    Value: !Join [ ", ", [
+      !Ref CustomerLandingBucket,
+      !Ref AccelerometerLandingBucket,
+      !Ref StepTrainerLandingBucket,
+      !Ref CustomerTrustedBucket,
+      !Ref AccelerometerTrustedBucket,
+      !Ref StepTrainerTrustedBucket,
+      !Ref CustomerCuratedBucket,
+      !Ref MachineLearningCuratedBucket
+    ]]
+
+  GlueDatabaseName:
+    Description: The Glue Database name
+    Value: !Ref GlueDatabase
+
+  GlueJobRoleArn:
+    Description: IAM Role ARN for Glue Jobs
+    Value: !GetAtt GlueJobRole.Arn
